@@ -1,7 +1,4 @@
 
-
-
-
 \## 1. Environnement de travail
 
 
@@ -269,6 +266,80 @@ docker run --rm --network none alpine:3.20 ping -c 2 8.8.8.8
 
 
 Le réseau none ne fournit aucune interface réseau externe au conteneur.
+
+
+
+ 
+
+## 8. TP : Cloisonnement réseau avec Docker
+
+### Objectif
+
+Mettre en place une architecture réseau segmentée avec trois conteneurs :
+
+- `proxy-cloison` : serveur Nginx, connecté uniquement au réseau frontend.
+- `app-cloison` : conteneur intermédiaire, connecté aux deux réseaux.
+- `db-cloison` : serveur PostgreSQL, connecté uniquement au réseau backend.
+
+### 8.1 Création des réseaux
+
+```powershell
+docker network create frontend
+docker network create --internal backend
+```
+
+Le réseau `backend` est interne et ne permet pas l'accès direct à Internet.
+
+### 8.2 Création de la base de données
+
+```powershell
+docker run -d --name db-cloison --network backend -e POSTGRES_USER=etudiant -e POSTGRES_PASSWORD=motdepasse-tp -e POSTGRES_DB=cours -v pgdata-reseau:/var/lib/postgresql/data postgres:16-alpine
+```
+
+### 8.3 Création du conteneur applicatif
+
+```powershell
+docker run -d --name app-cloison --network backend postgres:16-alpine sleep 3600
+docker network connect frontend app-cloison
+```
+
+### 8.4 Création du proxy Nginx
+
+Le port 8080 étant déjà utilisé par un autre conteneur, le port 8085 a été choisi.
+
+```powershell
+docker run -d --name proxy-cloison --network frontend -p 127.0.0.1:8085:80 nginx:1.27-alpine
+```
+
+Vérification :
+
+```powershell
+curl.exe http://localhost:8085
+```
+
+### 8.5 Tests de cloisonnement
+
+| Test | Résultat |
+|---|---|
+| Proxy vers App | Accessible |
+| Proxy vers DB | Inaccessible |
+| App vers Proxy | Accessible |
+| App vers DB | Accessible |
+| DB vers Proxy | Inaccessible |
+| DB vers Internet | Inaccessible |
+| Proxy vers Internet | Accessible |
+
+Commandes de vérification :
+
+```powershell
+docker exec proxy-cloison ping -c 2 app-cloison
+docker exec proxy-cloison ping -c 2 db-cloison
+docker exec app-cloison ping -c 2 proxy-cloison
+docker exec app-cloison pg_isready -h db-cloison -U etudiant
+docker exec db-cloison ping -c 2 proxy-cloison
+docker exec db-cloison ping -c 2 -W 3 8.8.8.8
+docker exec proxy-cloison ping -c 2 -W 3 8.8.8.8
+```
 
 
 
